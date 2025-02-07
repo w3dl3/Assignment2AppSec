@@ -33,5 +33,9 @@ public class Member
 
         [MaxLength(500)]
         public string WhoAmI { get; set; }
+        public string EncryptionKey { get; set; }
+        public string EncryptionIV { get; set; }
+        public string SessionId { get; set; }
+
     }
 }

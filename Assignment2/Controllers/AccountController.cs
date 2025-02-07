@@ -54,7 +54,7 @@
             }
 
             // Encrypt NRIC
-            string encryptedNRIC = EncryptData(model.NRIC);
+            var (encryptedNRIC, encryptionKey, encryptionIV) = EncryptData(model.NRIC);
 
             // Hash the password
             string hashedPassword = HashPassword(model.Password);
@@ -67,7 +67,6 @@
                 await model.Resume.CopyToAsync(stream);
             }
 
-            // Create and save the new member
             var member = new Member
             {
                 FirstName = model.FirstName,
@@ -78,7 +77,10 @@
                 PasswordHash = hashedPassword,
                 DateOfBirth = model.DateOfBirth,
                 ResumePath = resumePath,
-                WhoAmI = model.WhoAmI
+                WhoAmI = model.WhoAmI,
+                EncryptionKey = encryptionKey,
+                EncryptionIV = encryptionIV,
+                SessionId = string.Empty
             };
 
             _context.Members.Add(member);
@@ -87,11 +89,13 @@
             return RedirectToAction("Login", "Account");
         }
 
-        private string EncryptData(string input)
+        private (string EncryptedData, string Key, string IV) EncryptData(string input)
         {
             using (var aes = Aes.Create())
             {
                 aes.GenerateKey();
+                aes.GenerateIV();
+
                 var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
                 using var ms = new MemoryStream();
                 using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
@@ -100,7 +104,26 @@
                     writer.Write(input);
                 }
 
-                return Convert.ToBase64String(ms.ToArray());
+                string encryptedData = Convert.ToBase64String(ms.ToArray());
+                string key = Convert.ToBase64String(aes.Key);
+                string iv = Convert.ToBase64String(aes.IV);
+
+                return (encryptedData, key, iv);
+            }
+        }
+        private string DecryptData(string encryptedData, string key, string iv)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = Convert.FromBase64String(key);
+                aes.IV = Convert.FromBase64String(iv);
+
+                var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                using var ms = new MemoryStream(Convert.FromBase64String(encryptedData));
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+                using var reader = new StreamReader(cs);
+
+                return reader.ReadToEnd();
             }
         }
 
@@ -172,10 +195,24 @@
                 return View(model);
             }
 
+            // Check if user already has an active session
+            if (!string.IsNullOrEmpty(user.SessionId))
+            {
+                ViewData["ErrorMessage"] = "You are already logged in on another device. Please log out before logging in again.";
+                return View(model);
+            }
+
+            // Generate a new session ID
+            string sessionId = Guid.NewGuid().ToString();
+
+            // Update the user's session ID in the database
+            user.SessionId = sessionId;
+            await _context.SaveChangesAsync();
+
             // Successful login - reset failed attempts and create session
             failedLoginAttempts[email] = 0;
             HttpContext.Session.SetString("UserId", user.Id.ToString());
-            HttpContext.Session.SetString("UserEmail", user.Email);
+            HttpContext.Session.SetString("SessionId", sessionId);
 
             // Log user activity (audit log)
             await _context.AuditLog.AddAsync(new AuditLog
@@ -188,14 +225,31 @@
 
             return RedirectToAction("Index", "Home");
         }
-
         [HttpPost]
-        [ValidateAntiForgeryToken]  // CSRF protection
-        public IActionResult Logout()
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Logout()
         {
+            string sessionId = HttpContext.Session.GetString("SessionId");
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                int userId = int.Parse(HttpContext.Session.GetString("UserId"));
+                var user = await _context.Members.FirstOrDefaultAsync(m => m.Id == userId);
+
+                if (user != null && user.SessionId == sessionId)
+                {
+                    user.SessionId = string.Empty;
+
+                    // Explicitly mark the SessionId property as modified
+                    _context.Entry(user).Property(u => u.SessionId).IsModified = true;
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+
             HttpContext.Session.Clear();
             return RedirectToAction("Login");
         }
+
 
         private bool VerifyPasswordHash(string password, string storedHash)
         {
