@@ -1,0 +1,26 @@
+﻿@model Assignment2.Models.UserInfoViewModel
+
+@{
+    ViewData["Title"] = "Home Page";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Welcome, @Html.Encode(Model.FirstName) @Html.Encode(Model.LastName)</h1>
+
+    <div class="mt-4">
+        <h3>Your Information</h3>
+        <p><strong>Email:</strong> @Html.Encode(Model.Email)</p>
+        <p><strong>Gender:</strong> @Html.Encode(Model.Gender)</p>
+        <p><strong>Date of Birth:</strong> @Html.Encode(Model.DateOfBirth.ToShortDateString())</p>
+        <p><strong>Who Am I:</strong> @Html.Encode(Model.WhoAmI)</p>
+        <p><strong>Resume:</strong> <a href="~/uploads/@Html.Encode(Model.ResumePath)" target="_blank">View Resume</a></p>
+        <p><strong>Decrypted NRIC:</strong> @Html.Encode(Model.EncryptedNRIC)</p>
+    </div>
+
+    <div class="mt-4">
+        <form asp-controller="Account" asp-action="Logout" method="post">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-danger">Logout</button>
+        </form>
+    </div>
+</div>

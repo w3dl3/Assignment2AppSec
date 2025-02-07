@@ -1,0 +1,44 @@
+﻿@model Assignment2.Models.LoginViewModel
+
+<h2 class="text-center">Login</h2>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-4">
+            <!-- CSRF Token -->
+            <form asp-action="Login" method="post" class="bg-light p-4 rounded shadow-sm">
+                @Html.AntiForgeryToken() <!-- Anti-CSRF Token for protection -->
+                <!-- Display error message if present -->
+                @if (!string.IsNullOrEmpty(ViewData["ErrorMessage"] as string))
+                {
+                    <div class="alert alert-danger text-center">@Html.Encode(ViewData["ErrorMessage"])</div>
+                }
+
+                <div class="mb-3">
+                    <label asp-for="Email" class="form-label">Email:</label>
+                    <input asp-for="Email" class="form-control" required maxlength="100" type="email" />
+                    <span asp-validation-for="Email" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Password" class="form-label">Password:</label>
+                    <input asp-for="Password" type="password" class="form-control" required minlength="8" />
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </div>
+
+                <!-- Register link -->
+                <div class="text-center mt-3">
+                    <p>Don't have an account? <a asp-controller="Account" asp-action="Register">Register Now</a></p>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

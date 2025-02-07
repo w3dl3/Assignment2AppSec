@@ -1,0 +1,91 @@
+﻿@model RegisterViewModel
+
+<h2 class="text-center">Register</h2>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <!-- CSRF Token -->
+            <form asp-action="Register" method="post" enctype="multipart/form-data" class="bg-light p-4 rounded shadow-sm">
+                @Html.AntiForgeryToken() <!-- Anti-CSRF Token for protection -->
+
+                <div class="mb-3">
+                    <label asp-for="FirstName" class="form-label">First Name:</label>
+                    <input asp-for="FirstName" class="form-control" required maxlength="50" pattern="[A-Za-z\s]+" title="Only alphabets and spaces are allowed" />
+                    <span asp-validation-for="FirstName" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="LastName" class="form-label">Last Name:</label>
+                    <input asp-for="LastName" class="form-control" required maxlength="50" pattern="[A-Za-z\s]+" />
+                    <span asp-validation-for="LastName" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Gender" class="form-label">Gender:</label>
+                    <select asp-for="Gender" class="form-select" required>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                    <span asp-validation-for="Gender" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="NRIC" class="form-label">NRIC:</label>
+                    <input asp-for="NRIC" class="form-control" required maxlength="9" pattern="[STFG]\d{7}[A-Z]" title="Valid NRIC format required" />
+                    <span asp-validation-for="NRIC" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Email" class="form-label">Email:</label>
+                    <input asp-for="Email" class="form-control" type="email" required maxlength="100" />
+                    <span asp-validation-for="Email" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Password" class="form-label">Password:</label>
+                    <input asp-for="Password" type="password" class="form-control" required minlength="8" />
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="ConfirmPassword" class="form-label">Confirm Password:</label>
+                    <input asp-for="ConfirmPassword" type="password" class="form-control" required />
+                    <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="DateOfBirth" class="form-label">Date of Birth:</label>
+                    <input asp-for="DateOfBirth" type="date" class="form-control" required />
+                    <span asp-validation-for="DateOfBirth" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="WhoAmI" class="form-label">Who Am I:</label>
+                    <textarea asp-for="WhoAmI" class="form-control" rows="3" maxlength="500"></textarea>
+                    <span asp-validation-for="WhoAmI" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Resume" class="form-label">Resume:</label>
+                    <input asp-for="Resume" type="file" class="form-control" required accept=".pdf,.doc,.docx" />
+                    <span asp-validation-for="Resume" class="text-danger"></span>
+                </div>
+
+                <!-- Register Button -->
+                <div class="d-grid mb-3">
+                    <button type="submit" class="btn btn-primary">Register</button>
+                </div>
+
+                <!-- Back to Login Button -->
+                <div class="text-center">
+                    <a asp-controller="Account" asp-action="Login" class="btn btn-link">Back to Login</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
