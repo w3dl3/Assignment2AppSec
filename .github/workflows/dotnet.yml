@@ -16,10 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Setup .NET
+    - name: Setup .NET (Preview Version for .NET 9.0)
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 9.0.x-preview  # Install .NET 9.0 preview version
+        include-prerelease: true 
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
