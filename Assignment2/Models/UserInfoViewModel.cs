@@ -16,6 +16,7 @@
         public string ResumePath { get; set; }
 
         public string EncryptedData { get; set; }
+        public bool TwoFactorEnabled { get; set; }
     }
 }
 

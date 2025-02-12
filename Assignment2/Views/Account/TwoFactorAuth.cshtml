@@ -1,0 +1,18 @@
+﻿@model Assignment2.Models.TwoFactorAuthViewModel
+
+<h2 class="text-center">Two-Factor Authentication</h2>
+
+@if (!string.IsNullOrEmpty(ViewData["ErrorMessage"] as string))
+{
+    <div class="alert alert-danger text-center">@Html.Encode(ViewData["ErrorMessage"])</div>
+}
+
+<form asp-action="TwoFactorAuth" method="post">
+    @Html.AntiForgeryToken()
+    <div class="mb-3">
+        <label class="form-label">Enter OTP Code:</label>
+        <input asp-for="Code" type="text" class="form-control" required />
+        <span asp-validation-for="Code" class="text-danger"></span>
+    </div>
+    <button type="submit" class="btn btn-primary">Verify</button>
+</form>

@@ -38,9 +38,11 @@ builder.Services.AddSession(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (!app.Environment.IsDevelopment())
 {
-    app.UseMigrationsEndPoint();
+    app.UseExceptionHandler("/Error/GeneralError");  // Global error handling
+    app.UseStatusCodePagesWithReExecute("/Error/{0}"); // Handles 404, 403, etc.
+    app.UseHsts();
 }
 else
 {

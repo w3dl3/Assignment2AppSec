@@ -21,9 +21,20 @@ public class Member
 
         [Required, EmailAddress]
         public string Email { get; set; }
+        public int FailedLoginAttempts { get; set; } = 0;
+        public DateTime? LastFailedLogin { get; set; }
+        public DateTime? LockoutEndTime { get; set; }
 
         [Required]
         public string PasswordHash { get; set; }
+        public string? OldPasswordHash1 { get; set; } = string.Empty;
+        public string? OldPasswordHash2 { get; set; } = string.Empty;
+        public DateTime LastPasswordChange { get; set; } = DateTime.UtcNow;
+        public string? ResetToken { get; set; }
+        public DateTime? ResetTokenExpiry { get; set; }
+        public bool TwoFactorEnabled { get; set; } = false; // Enable/Disable 2FA
+        public string? TwoFactorCode { get; set; } // Stores the OTP
+        public DateTime? TwoFactorExpiry { get; set; }
 
         [Required, DataType(DataType.Date)]
         public DateTime DateOfBirth { get; set; }
@@ -36,6 +47,5 @@ public class Member
         public string EncryptionKey { get; set; }
         public string EncryptionIV { get; set; }
         public string SessionId { get; set; }
-
     }
 }

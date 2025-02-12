@@ -9,6 +9,8 @@
     using System.IO;
     using System.Threading.Tasks;
     using Assignment2.Models;
+    using System.Net.Mail;
+    using System.Net;
 
     public class AccountController : Controller
     {
@@ -156,11 +158,8 @@
         {
             return View();
         }
-
-        private static Dictionary<string, int> failedLoginAttempts = new();
-
         [HttpPost]
-        [ValidateAntiForgeryToken]  // CSRF protection
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login(LoginViewModel model)
         {
             if (!ModelState.IsValid)
@@ -168,63 +167,147 @@
                 return View(model);
             }
 
-            string email = model.Email.ToLower();
-
-            // Check if account is locked
-            if (failedLoginAttempts.ContainsKey(email) && failedLoginAttempts[email] >= 3)
-            {
-                ViewData["ErrorMessage"] = "Your account has been locked due to too many failed login attempts. Please try again later.";
-                return View(model);
-            }
-
-            // Check if the user exists
-            var user = await _context.Members.FirstOrDefaultAsync(m => m.Email == email);
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.Email == model.Email);
             if (user == null || !VerifyPasswordHash(model.Password, user.PasswordHash))
             {
-                // Increment failed login attempts
-                if (failedLoginAttempts.ContainsKey(email))
-                {
-                    failedLoginAttempts[email]++;
-                }
-                else
-                {
-                    failedLoginAttempts[email] = 1;
-                }
-
                 ViewData["ErrorMessage"] = "Incorrect email or password.";
                 return View(model);
             }
 
-            // Check if user already has an active session
+            // Prevent multiple sessions
             if (!string.IsNullOrEmpty(user.SessionId))
             {
-                ViewData["ErrorMessage"] = "You are already logged in on another device. Please log out before logging in again.";
+                ViewData["ErrorMessage"] = "You are already logged in from another device.";
                 return View(model);
             }
 
-            // Generate a new session ID
-            string sessionId = Guid.NewGuid().ToString();
-
-            // Update the user's session ID in the database
-            user.SessionId = sessionId;
-            await _context.SaveChangesAsync();
-
-            // Successful login - reset failed attempts and create session
-            failedLoginAttempts[email] = 0;
-            HttpContext.Session.SetString("UserId", user.Id.ToString());
-            HttpContext.Session.SetString("SessionId", sessionId);
-
-            // Log user activity (audit log)
-            await _context.AuditLog.AddAsync(new AuditLog
+            // Handle account lockout
+            if (user.LockoutEndTime.HasValue && user.LockoutEndTime > DateTime.UtcNow)
             {
-                UserId = user.Id,
-                Activity = "User logged in",
-                Timestamp = DateTime.UtcNow,
-            });
+                ViewData["ErrorMessage"] = $"Your account is locked. Try again in {user.LockoutEndTime.Value - DateTime.UtcNow:mm\\:ss} minutes.";
+                return View(model);
+            }
+
+            // ✅ If 2FA is enabled, generate OTP and send it via email
+            if (user.TwoFactorEnabled)
+            {
+                string otpCode = GenerateOtp();
+                user.TwoFactorCode = otpCode;
+                user.TwoFactorExpiry = DateTime.UtcNow.AddMinutes(5); // OTP valid for 5 minutes
+                await _context.SaveChangesAsync();
+
+                await EmailService.SendEmailAsync(user.Email, "Your 2FA Code", $"Your OTP code is: {otpCode}");
+
+                HttpContext.Session.SetString("Pending2FAUser", user.Email);
+                ViewData["Require2FA"] = true;  // ✅ Tell the view to display the 2FA form
+                return View("Login");  // ✅ Re-render the login page with 2FA enabled
+            }
+
+            // Successful login
+            user.SessionId = Guid.NewGuid().ToString();
             await _context.SaveChangesAsync();
+
+            HttpContext.Session.SetString("UserId", user.Id.ToString());
+            HttpContext.Session.SetString("SessionId", user.SessionId);
 
             return RedirectToAction("Index", "Home");
         }
+
+        // ✅ Two-Factor Authentication Page (OTP Entry)
+        [HttpGet]
+        public IActionResult TwoFactorAuth()
+        {
+            return View();
+        }
+
+        // ✅ Verify OTP Code
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TwoFactorAuth(TwoFactorAuthViewModel model)
+        {
+            string email = HttpContext.Session.GetString("Pending2FAUser");
+            if (string.IsNullOrEmpty(email))
+            {
+                return RedirectToAction("Login");
+            }
+
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.Email == email);
+            if (user == null)
+            {
+                return RedirectToAction("Login");
+            }
+
+            if (user.TwoFactorCode != model.Code.Trim() || user.TwoFactorExpiry < DateTime.UtcNow)
+            {
+                ViewData["ErrorMessage"] = "Invalid or expired OTP code.";
+                return View("Login");
+            }
+
+            // ✅ Successful 2FA verification
+            user.SessionId = Guid.NewGuid().ToString();
+            user.TwoFactorCode = null;
+            user.TwoFactorExpiry = null;
+            await _context.SaveChangesAsync();
+
+            HttpContext.Session.SetString("UserId", user.Id.ToString());
+            HttpContext.Session.SetString("SessionId", user.SessionId);
+
+            return RedirectToAction("Index", "Home");
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EnableTwoFactorAuth()
+        {
+            string userIdString = HttpContext.Session.GetString("UserId");
+            if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int userId))
+            {
+                return RedirectToAction("Login");
+            }
+
+            var user = await _context.Members.FindAsync(userId);
+            if (user == null) return RedirectToAction("Login");
+
+            // ✅ Enable 2FA directly
+            user.TwoFactorEnabled = true;
+            await _context.SaveChangesAsync();
+
+            ViewData["Message"] = "Two-Factor Authentication has been enabled.";
+            return RedirectToAction("Index", "Home");
+        }
+
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DisableTwoFactorAuth()
+        {
+            string userIdString = HttpContext.Session.GetString("UserId");
+            if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int userId))
+            {
+                return RedirectToAction("Login");
+            }
+
+            var user = await _context.Members.FindAsync(userId);
+            if (user == null) return RedirectToAction("Login");
+
+            // ✅ Disable 2FA directly
+            user.TwoFactorEnabled = false;
+            user.TwoFactorCode = null;
+            user.TwoFactorExpiry = null;
+            await _context.SaveChangesAsync();
+
+            ViewData["Message"] = "Two-Factor Authentication has been disabled.";
+            return RedirectToAction("Index", "Home");
+        }
+
+        // ✅ Generate OTP & Expiry
+        private string GenerateOtp()
+        {
+            Random random = new Random();
+            return random.Next(100000, 999999).ToString(); // 6-digit OTP
+        }
+
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
@@ -238,6 +321,8 @@
                 if (user != null && user.SessionId == sessionId)
                 {
                     user.SessionId = string.Empty;
+                    user.TwoFactorCode = null; // ✅ Clear OTP on logout
+                    user.TwoFactorExpiry = null;
 
                     // Explicitly mark the SessionId property as modified
                     _context.Entry(user).Property(u => u.SessionId).IsModified = true;
@@ -250,6 +335,197 @@
             return RedirectToAction("Login");
         }
 
+        [HttpGet]
+        public IActionResult ChangePassword()
+        {
+            return View();
+        }
+
+        private bool IsPasswordReused(string newPassword, Member user)
+        {
+            string newHash = HashPassword(newPassword);
+            return newHash == user.PasswordHash || newHash == user.OldPasswordHash1 || newHash == user.OldPasswordHash2;
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ChangePassword(ChangePasswordViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return View(model);
+            }
+
+            // Ensure session exists before trying to get UserId
+            string userIdString = HttpContext.Session.GetString("UserId");
+            if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int userId))
+            {
+                return RedirectToAction("Login");
+            }
+
+            var user = await _context.Members.FindAsync(userId);
+
+            if (user == null)
+            {
+                return RedirectToAction("Login");
+            }
+
+            // Ensure the new password is not one of the last two used passwords
+            string newHash = HashPassword(model.NewPassword);
+            if (newHash == user.PasswordHash || newHash == user.OldPasswordHash1 || newHash == user.OldPasswordHash2)
+            {
+                ViewData["ErrorMessage"] = "This password has been used before. Please choose a different password.";
+                return View(model);
+            }
+
+            // Rotate old password hashes before updating
+            user.OldPasswordHash2 = user.OldPasswordHash1;
+            user.OldPasswordHash1 = user.PasswordHash;
+            user.PasswordHash = newHash;
+            user.LastPasswordChange = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction("Index", "Home");
+        }
+
+        [HttpGet]
+        public IActionResult ForgotPassword()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return View(model);
+            }
+
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.Email == model.Email);
+            if (user == null)
+            {
+                ViewData["Message"] = "If the email exists, a reset link has been sent.";
+                return View();
+            }
+
+            // Generate a reset token
+            user.ResetToken = Guid.NewGuid().ToString();
+            user.ResetTokenExpiry = DateTime.UtcNow.AddMinutes(15); // 15-minute expiry
+            await _context.SaveChangesAsync();
+
+            // Create reset link
+            string resetLink = Url.Action("ResetPassword", "Account", new { token = user.ResetToken }, Request.Scheme);
+            string emailBody = $"Click the link to reset your password: <a href='{resetLink}'>Reset Password</a>";
+
+            // Send email
+            await EmailService.SendEmailAsync(user.Email, "Password Reset", emailBody);
+
+            ViewData["Message"] = "If the email exists, a reset link has been sent.";
+            return View();
+        }
+
+
+        [HttpPost]
+        public async Task<IActionResult> SendPasswordResetLink(string email)
+        {
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.Email == email);
+            if (user == null)
+            {
+                ViewData["ErrorMessage"] = "No account associated with this email.";
+                return View("ForgotPassword");
+            }
+
+            // Generate unique reset token
+            user.ResetToken = Guid.NewGuid().ToString();
+            user.ResetTokenExpiry = DateTime.UtcNow.AddMinutes(15); // 15 minutes expiry
+
+            await _context.SaveChangesAsync();
+
+            string resetLink = Url.Action("ResetPassword", "Account", new { token = user.ResetToken }, Request.Scheme);
+            await EmailService.SendEmailAsync(user.Email, "Password Reset", $"Click here to reset your password: {resetLink}");
+
+            return View("ResetLinkSent");
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ResetPassword(string token)
+        {
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.ResetToken == token && m.ResetTokenExpiry > DateTime.UtcNow);
+            if (user == null)
+            {
+                return View("Error"); // Show an error if token is invalid or expired
+            }
+
+            return View(new ResetPasswordViewModel { Token = token });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+        {
+            var user = await _context.Members.FirstOrDefaultAsync(m => m.ResetToken == model.Token && m.ResetTokenExpiry > DateTime.UtcNow);
+            if (user == null)
+            {
+                ViewData["ErrorMessage"] = "Invalid or expired reset token.";
+                return View(model);
+            }
+
+            // Hash the new password
+            string newHash = HashPassword(model.NewPassword);
+
+            // Ensure the new password is not one of the last two used passwords
+            if (newHash == user.PasswordHash || newHash == user.OldPasswordHash1 || newHash == user.OldPasswordHash2)
+            {
+                ViewData["ErrorMessage"] = "This password has been used before. Please use a different password.";
+                return View(model);
+            }
+
+            // Update old password history before changing the password
+            user.OldPasswordHash2 = user.OldPasswordHash1;
+            user.OldPasswordHash1 = user.PasswordHash;
+            user.PasswordHash = newHash;
+            user.LastPasswordChange = DateTime.UtcNow;
+            user.ResetToken = null;
+            user.ResetTokenExpiry = null;
+
+            await _context.SaveChangesAsync();
+            return RedirectToAction("Login");
+        }
+
+        public static class EmailService
+        {
+            public static async Task SendEmailAsync(string to, string subject, string body)
+            {
+                using var smtp = new SmtpClient("smtp.gmail.com")
+                {
+                    Port = 587,
+                    Credentials = new NetworkCredential("soonfook7@gmail.com", "fycc inoe wvyf coxr"), // Use your Gmail credentials
+                    EnableSsl = true
+                };
+
+
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress("your-email@gmail.com"),
+                    Subject = subject,
+                    Body = body,
+                    IsBodyHtml = true
+                };
+
+                mailMessage.To.Add(to);
+
+                try
+                {
+                    await smtp.SendMailAsync(mailMessage);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Email failed to send: {ex.Message}");
+                }
+            }
+        }
 
         private bool VerifyPasswordHash(string password, string storedHash)
         {

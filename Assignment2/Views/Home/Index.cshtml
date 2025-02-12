@@ -18,7 +18,10 @@
     </div>
 
     <div class="mt-4">
-        <form asp-controller="Account" asp-action="Logout" method="post">
+        <!-- Change Password Button -->
+        <a asp-controller="Account" asp-action="ChangePassword" class="btn btn-primary">Change Password</a>
+        <!-- Logout Button -->
+        <form asp-controller="Account" asp-action="Logout" method="post" class="d-inline">
             @Html.AntiForgeryToken()
             <button type="submit" class="btn btn-danger">Logout</button>
         </form>
